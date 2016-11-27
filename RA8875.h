@@ -144,10 +144,13 @@ CS       10		53           YES       CS
 */
 
 #ifndef _RA8875MC_H_
+
 #define _RA8875MC_H_
 
 #include "_includes/RA8875_CPU_commons.h"
-
+#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) || defined(__MKL26Z64__)
+#include <SPIN.h>
+#endif
 
 #if !defined(swapvals)
 	#if defined(ESP8266)
@@ -203,9 +206,10 @@ template <typename T> T PROGMEM_read (const T * sce)
 
 
 
-#if defined(__MKL26Z64__)
-	static bool _altSPI;
+#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) || defined(__MKL26Z64__)
+	static SPINClass *_pspin;
 #endif
+
 #ifdef SPI_HAS_TRANSACTION
 	static volatile uint32_t _SPImaxSpeed;//holder for SPI speed
 #endif
@@ -215,15 +219,15 @@ template <typename T> T PROGMEM_read (const T * sce)
 #endif
 
 
+
 class RA8875 : public Print {
  public:
 	// void 		debugData(uint16_t data,uint8_t len=8);
 	// void 		showLineBuffer(uint8_t data[],int len);
 //------------- INSTANCE -------------------------------------------------------------------
-	#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
-		RA8875(const uint8_t CSp,const uint8_t RSTp=255,const uint8_t mosi_pin=11,const uint8_t sclk_pin=13,const uint8_t miso_pin=12);
-	#elif defined(__MKL26Z64__)//TeensyLC
-		RA8875(const uint8_t CSp,const uint8_t RSTp=255,const uint8_t mosi_pin=11,const uint8_t sclk_pin=13,const uint8_t miso_pin=12);
+	#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) || defined(__MKL26Z64__)
+		RA8875(const uint8_t CSp,const uint8_t RSTp=255,const uint8_t mosi_pin=255,const uint8_t sclk_pin=255,const uint8_t miso_pin=255, 
+				SPINClass *pspin=(SPINClass*)(&SPIN));
 	#elif defined(__MK64FX512__) || defined(__MK66FX1M0__)	
 		RA8875(const uint8_t CSp,const uint8_t RSTp=255,const uint8_t mosi_pin=11,const uint8_t sclk_pin=13,const uint8_t miso_pin=12);
 	#elif defined(___DUESTUFF)//DUE
@@ -690,8 +694,8 @@ using Print::write;
 	void _startSend()
 		__attribute__((always_inline)) {
 		#if defined(SPI_HAS_TRANSACTION)
-			#if defined(__MKL26Z64__)	
-				_altSPI == true ? SPI1.beginTransaction(SPISettings(_SPImaxSpeed, MSBFIRST, SPI_MODE3)) : SPI.beginTransaction(SPISettings(_SPImaxSpeed, MSBFIRST, SPI_MODE3));
+			#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) || defined(__MKL26Z64__)
+				_pspin->beginTransaction(SPISettings(_SPImaxSpeed, MSBFIRST, SPI_MODE0));//TODO !
 			#elif defined(ESP8266)	
 				SPI.beginTransaction(SPISettings(_SPImaxSpeed, MSBFIRST, SPI_MODE3));//it works, anyway ESP doesn't work in MODE3!
 			#elif defined(SPARK)	
@@ -756,8 +760,8 @@ using Print::write;
 	#endif
 	
 	#if defined(SPI_HAS_TRANSACTION)
-		#if defined(__MKL26Z64__)	
-			_altSPI == true ? SPI1.endTransaction() : SPI.endTransaction();
+		#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) ||  defined(__MKL26Z64__)
+			_pspin->endTransaction();
 		#else
 			SPI.endTransaction();
 		#endif
@@ -784,8 +788,8 @@ void _slowDownSPI(bool slow,uint32_t slowSpeed=10000000UL)
 		if (slow){
 			_SPImaxSpeed = slowSpeed;
 		} else {
-			#if defined(__MKL26Z64__)	
-				if (_altSPI){
+			#if defined(__MKL26Z64__)	// Not sure here but hack...
+				if (_pspin != &SPIN){
 					_SPImaxSpeed = MAXSPISPEED2;//TeensyLC max SPI speed on alternate SPI
 				} else {
 					_SPImaxSpeed = MAXSPISPEED;
@@ -858,6 +862,21 @@ void _slowDownSPI(bool slow,uint32_t slowSpeed=10000000UL)
 			return r;
 		}
 		
+#elif defined(___TEENSYES)//all of them (32 bit only)
+		void _spiwrite16(uint16_t d) 
+			__attribute__((always_inline)) {
+			_pspin->transfer16(d);
+		}
+
+		void _spiwrite(uint8_t c) 
+			__attribute__((always_inline)) {
+			_pspin->transfer(c);
+		}
 #endif
+		uint8_t _spiread(void) 
+			__attribute__((always_inline)) {
+			return  _pspin->transfer(0);
+		}
+
 };
 #endif

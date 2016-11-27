@@ -65,34 +65,18 @@ Bit:	Called by:		In use:
 	Teensy CS SPI1:[MOSI1(0) MISO1(1) CLK1(20) CS1(6)]
 */
 /**************************************************************************/
-//------------------------------TEENSY 3/3.1 ---------------------------------------
-#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
-	RA8875::RA8875(const uint8_t CSp,const uint8_t RSTp,const uint8_t mosi_pin,const uint8_t sclk_pin,const uint8_t miso_pin)
+//------------------------------TEENSY 3/3.1/3.5/3.6/LC ---------------------------------------
+#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) || defined(__MKL26Z64__)
+	RA8875::RA8875(const uint8_t CSp,const uint8_t RSTp,const uint8_t mosi_pin,const uint8_t sclk_pin,const uint8_t miso_pin,
+		SPINClass *pspin )
 	{
 		_mosi = mosi_pin;
 		_miso = miso_pin;
 		_sclk = sclk_pin;
 		_cs = CSp;
 		_rst = RSTp;
-//------------------------------Teensy LC-------------------------------------------
-#elif defined(__MKL26Z64__)
-	RA8875::RA8875(const uint8_t CSp,const uint8_t RSTp,const uint8_t mosi_pin,const uint8_t sclk_pin,const uint8_t miso_pin)
-	{
-		_mosi = mosi_pin;
-		_miso = miso_pin;
-		_sclk = sclk_pin;
-		_cs = CSp;
-		_rst = RSTp;
-		_altSPI = false;
-//------------------------------Teensy of the future -------------------------------------------
-#elif defined(__MK64FX512__) || defined(__MK66FX1M0__)
-	RA8875::RA8875(const uint8_t CSp,const uint8_t RSTp,const uint8_t mosi_pin,const uint8_t sclk_pin,const uint8_t miso_pin)
-	{
-		_mosi = mosi_pin;
-		_miso = miso_pin;
-		_sclk = sclk_pin;
-		_cs = CSp;
-		_rst = RSTp;
+		_pspin	  = pspin;
+
 //---------------------------------DUE--------------------------------------------
 #elif defined(___DUESTUFF)//DUE
 	RA8875::RA8875(const uint8_t CSp, const uint8_t RSTp) 
@@ -362,79 +346,68 @@ void RA8875::begin(const enum RA8875sizes s,uint8_t colors)
 	_INTC1_Reg = 0b00000000;
 
 	//------------------------------- Start SPI initialization ------------------------------------------
-	#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
-		//always uses SPI transaction
-		if ((_mosi == 11 || _mosi == 7) && (_miso == 12 || _miso == 8) && (_sclk == 13 || _sclk == 14)) {//valid SPI pins?
-			if (_mosi != 11) SPI.setMOSI(_mosi);
-			if (_miso != 12) SPI.setMISO(_miso);
-			if (_sclk != 13) SPI.setSCK(_sclk);
-		} else {
-			_errorCode |= (1 << 1);//set
-			return;
-		}
-		if (!SPI.pinIsChipSelect(_cs)) {
-			_errorCode |= (1 << 2);//set
-			return;
-		}
-		pinMode(_cs, OUTPUT);
-		SPI.begin();
-		digitalWrite(_cs, HIGH);
-	#elif defined(__MK64FX512__) || defined(__MK66FX1M0__)	//future teensys
-		//always uses SPI transaction
-		if ((_mosi == 11 || _mosi == 7) && (_miso == 12 || _miso == 8) && (_sclk == 13 || _sclk == 14)) {//valid SPI pins?
-			if (_mosi != 11) SPI.setMOSI(_mosi);
-			if (_miso != 12) SPI.setMISO(_miso);
-			if (_sclk != 13) SPI.setSCK(_sclk);
-		} else {
-			_errorCode |= (1 << 1);//set
-			return;
-		}
-		if (!SPI.pinIsChipSelect(_cs)) {
-			_errorCode |= (1 << 2);//set
-			return;
-		}
-		pinMode(_cs, OUTPUT);
-		SPI.begin();
-		digitalWrite(_cs, HIGH);
-	#elif defined(__MKL26Z64__)//TeensyLC
-		//always uses SPI ransaction
-		#if TEENSYDUINO > 121//not supported prior 1.22!
-			if ((_mosi == 11 || _mosi == 7 || _mosi == 0 || _mosi == 21) && (_miso == 12 || _miso == 8 || _miso == 1 || _miso == 5) && (_sclk == 13 || _sclk == 14 || _sclk == 20)) {//valid SPI pins?
-				if ((_mosi == 0 || _mosi == 21) && (_miso == 1 || _miso == 5) && (_sclk == 20)) {//identify alternate SPI channel 1 (24Mhz)
-					_altSPI = true;
-					if (_cs != 6){//on SPI1 cs should be only 6!
-						_errorCode |= (1 << 2);//set
-						return;
-					}
-					if (_mosi != 11) SPI1.setMOSI(_mosi);
-					if (_miso != 12) SPI1.setMISO(_miso);
-					if (_sclk != 13) SPI1.setSCK(_sclk);
-					pinMode(_cs, OUTPUT);
-					SPI1.begin();
-				} else {//default SPI channel 0 (12Mhz)
-					_altSPI = false;
-					if (_mosi != 11) SPI.setMOSI(_mosi);
-					if (_miso != 12) SPI.setMISO(_miso);
-					if (_sclk != 13) SPI.setSCK(_sclk);
-					if (!SPI.pinIsChipSelect(_cs)) {//ERROR
-						_errorCode |= (1 << 2);//set
-						return;
-					}
-					pinMode(_cs, OUTPUT);
-					SPI.begin();
-					digitalWrite(_cs, HIGH);
+	#if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__) ||  defined(__MKL26Z64__)
+	    // verify SPI pins are valid;
+		// allow user to say use current ones...
+		if ((_mosi != 255) || (_miso != 255) || (_sclk != 255)) {
+			if (!(_pspin->pinIsMOSI(_mosi)) || !(_pspin->pinIsMISO(_miso)) || !(_pspin->pinIsSCK(_sclk))) {
+				#ifdef SPIN1_OBJECT_CREATED			
+				if (SPIN1.pinIsMOSI(_mosi) && SPIN1.pinIsMISO(_miso) && SPIN1.pinIsSCK(_sclk)) {
+					_pspin = &SPIN1;
+					Serial.println("ILI9341_t3n: SPIN1 automatically selected");
+				} else {
+					#ifdef SPIN2_OBJECT_CREATED			
+					if (SPIN2.pinIsMOSI(_mosi) && SPIN2.pinIsMISO(_miso) && SPIN2.pinIsSCK(_sclk)) {
+						_pspin = &SPIN2;
+						Serial.println("ILI9341_t3n: SPIN1 automatically selected");
+					} else {
+					#endif
+				#endif
+						uint8_t mosi_sck_bad = false;
+						Serial.print("ILI9341_t3n: Error not valid SPI pins:");
+						if(!(_pspin->pinIsMOSI(_mosi)))  {
+							Serial.print(" MOSI");
+							mosi_sck_bad = true;
+						}
+						if (!_pspin->pinIsSCK(_sclk)) {
+							Serial.print(" SCLK");
+							mosi_sck_bad = true;
+						}
+
+						// Maybe allow us to limp with only MISO bad
+						if(!(_pspin->pinIsMISO(_miso))) {
+							Serial.print(" MISO");
+							_miso = 0xff;	// set miso to 255 as flag it is bad
+						}
+						Serial.println();
+						
+						_errorCode |= (1 << 1);//set
+						if (mosi_sck_bad) {
+		    				return; // not valid pins...
+						}
+					#ifdef SPIN2_OBJECT_CREATED			
+		    		}
+		    		#endif
+				#ifdef SPIN1_OBJECT_CREATED			
 				}
-			} else {
-				_errorCode |= (1 << 1);//set
-				return;
+				#endif
+
 			}
-		#else
-			_altSPI = false;
-			pinMode(_cs, OUTPUT);
-			SPI.begin();
-			digitalWrite(_cs, HIGH);
-			_errorCode |= (1 << 3);//set
-		#endif
+			//Serial.printf("MOSI:%d MISO:%d SCK:%d\n\r", _mosi, _miso, _sclk);			
+    	    _pspin->setMOSI(_mosi);
+        	if (_miso != 0xff) _pspin->setMISO(_miso);
+        	_pspin->setSCK(_sclk);
+		}
+
+		// Not sure about this one yet. 
+		if (!_pspin->pinIsChipSelect(_cs)) {
+			_errorCode |= (1 << 2);//set
+			return;
+		}
+
+		pinMode(_cs, OUTPUT);
+		_pspin->begin();
+		digitalWrite(_cs, HIGH);
 	#elif !defined(ENERGIA)//everithing but ENERGIA
 		#if defined(___DUESTUFF)// DUE
 			#if defined(SPI_DUE_MODE_EXTENDED)
@@ -619,7 +592,7 @@ void RA8875::_initialize()
 	#else
 		#if defined(SPI_HAS_TRANSACTION)
 			#if defined(__MKL26Z64__)
-				if (_altSPI){
+				if (_pspin != &SPIN){
 					_SPImaxSpeed = MAXSPISPEED2;
 				} else {
 					_SPImaxSpeed = MAXSPISPEED;
@@ -3320,18 +3293,10 @@ void RA8875::drawPixels(uint16_t p[], uint16_t count, int16_t x, int16_t y)
     writeCommand(RA8875_MRWC);
     _startSend();
 	//set data
-	#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK)
+	#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK) || defined(___TEENSYES)
 		_spiwrite(RA8875_DATAWRITE);
 	#else
-		#if defined(SPI_HAS_TRANSACTION) && defined(__MKL26Z64__)	
-			if (_altSPI){
-				SPI1.transfer(RA8875_DATAWRITE);
-			} else {
-				SPI.transfer(RA8875_DATAWRITE);
-			}
-		#else
-			SPI.transfer(RA8875_DATAWRITE);
-		#endif
+		SPI.transfer(RA8875_DATAWRITE);
 	#endif
 	//the loop
 	for (i=0;i<count;i++){
@@ -3341,19 +3306,11 @@ void RA8875::drawPixels(uint16_t p[], uint16_t count, int16_t x, int16_t y)
 			temp = p[i];
 		}
 	#if !defined(ENERGIA) && !defined(___DUESTUFF) && ((ARDUINO >= 160) || (TEENSYDUINO > 121))
-		#if defined(SPI_HAS_TRANSACTION) && defined(__MKL26Z64__)	
+		#if  defined(___TEENSYES)
 			if (_color_bpp > 8){
-				if (_altSPI){
-					SPI1.transfer16(temp);
-				} else {
-					SPI.transfer16(temp);
-				}
+				_spiwrite16(temp);
 			} else {//TOTEST:layer bug workaround for 8bit color!
-				if (_altSPI){
-					SPI1.transfer(temp);
-				} else {
-					SPI.transfer(temp & 0xFF);
-				}
+				_spiwrite(temp >> 8);
 			}
 		#else
 			if (_color_bpp > 8){
@@ -3410,30 +3367,16 @@ uint16_t RA8875::getPixel(int16_t x, int16_t y)
 		_slowDownSPI(true);
 	#endif
     _startSend();
-	#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK)
+	#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK) || defined(___TEENSYES)
 		_spiwrite(RA8875_DATAREAD);
 		_spiwrite(0x00);
 	#else
-		#if defined(SPI_HAS_TRANSACTION) && defined(__MKL26Z64__)	
-			if (_altSPI){
-				SPI1.transfer(RA8875_DATAREAD);
-				SPI1.transfer(0x00);//first byte it's dummy
-			} else {
-				SPI.transfer(RA8875_DATAREAD);
-				SPI.transfer(0x00);//first byte it's dummy
-			}
-		#else
-			SPI.transfer(RA8875_DATAREAD);
-			SPI.transfer(0x00);//first byte it's dummy
-		#endif
+		SPI.transfer(RA8875_DATAREAD);
+		SPI.transfer(0x00);//first byte it's dummy
 	#endif
 	#if !defined(___DUESTUFF) && ((ARDUINO >= 160) || (TEENSYDUINO > 121))
-		#if defined(SPI_HAS_TRANSACTION) && defined(__MKL26Z64__)	
-			if (_altSPI){
-				color  = SPI1.transfer16(0x0);
-			} else {
-				color  = SPI.transfer16(0x0);
-			}
+		#if defined(___TEENSYES)
+			color  = _pspin->transfer16(0x0);
 		#else
 			color  = SPI.transfer16(0x0);
 		#endif
@@ -5628,7 +5571,7 @@ void RA8875::sleep(boolean sleep)
 			#else
 				#if defined(SPI_HAS_TRANSACTION)
 					#if defined(__MKL26Z64__)
-						if (_altSPI){
+						if (_pspin != &SPIN){
 							_SPImaxSpeed = MAXSPISPEED2;
 						} else {
 							_SPImaxSpeed = MAXSPISPEED;
@@ -5702,22 +5645,12 @@ void RA8875::_writeData(uint8_t data)
 		SPI.transfer(_cs, RA8875_DATAWRITE, SPI_CONTINUE); 
 		SPI.transfer(_cs, data, SPI_LAST);
 	#else
-		#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK)
+		#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK) || defined(___TEENSYES)
 			_spiwrite(RA8875_DATAWRITE);
 			_spiwrite(data);
 		#else
-			#if defined(__MKL26Z64__)	
-				if (_altSPI){
-					SPI1.transfer(RA8875_DATAWRITE);
-					SPI1.transfer(data);
-				} else {
-					SPI.transfer(RA8875_DATAWRITE);
-					SPI.transfer(data);
-				}
-			#else
-				SPI.transfer(RA8875_DATAWRITE);
-				SPI.transfer(data);
-			#endif
+			SPI.transfer(RA8875_DATAWRITE);
+			SPI.transfer(data);
 		#endif
 	#endif
 	_endSend();
@@ -5733,26 +5666,14 @@ void RA8875::_writeData(uint8_t data)
 void  RA8875::writeData16(uint16_t data) 
 {
 	_startSend();
-	#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK)
+	#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK) || defined(___TEENSYES)
 		_spiwrite(RA8875_DATAWRITE);
 	#else
-		#if defined(__MKL26Z64__)	
-			if (_altSPI){
-				SPI1.transfer(RA8875_DATAWRITE);
-			} else {
-				SPI.transfer(RA8875_DATAWRITE);
-			}
-		#else
-			SPI.transfer(RA8875_DATAWRITE);
-		#endif
+		SPI.transfer(RA8875_DATAWRITE);
 	#endif
 	#if !defined(ENERGIA) && !defined(___DUESTUFF) && ((ARDUINO >= 160) || (TEENSYDUINO > 121))
-		#if defined(__MKL26Z64__)	
-			if (_altSPI){
-				SPI1.transfer16(data);
-			} else {
-				SPI.transfer16(data);
-			}
+		#if defined(___TEENSYES)	
+			_spiwrite16(data);
 		#else
 			SPI.transfer16(data);
 		#endif
@@ -5793,23 +5714,12 @@ uint8_t RA8875::_readData(bool stat)
 		stat == true ? SPI.transfer(_cs, RA8875_CMDREAD, SPI_CONTINUE) : SPI.transfer(_cs, RA8875_DATAREAD, SPI_CONTINUE);
 		uint8_t x = SPI.transfer(_cs, 0x0, SPI_LAST);
 	#else
-		#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK)
+		#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK) || defined(___TEENSYES)
 			stat == true ? _spiwrite(RA8875_CMDREAD) : _spiwrite(RA8875_DATAREAD);
 			uint8_t x = _spiread();
 		#else
-			#if defined(__MKL26Z64__)	
-				uint8_t x;
-				if (_altSPI){
-					stat == true ? SPI1.transfer(RA8875_CMDREAD) : SPI1.transfer(RA8875_DATAREAD);
-					x = SPI1.transfer(0x0);
-				} else {
-					stat == true ? SPI.transfer(RA8875_CMDREAD) : SPI.transfer(RA8875_DATAREAD);
-					x = SPI.transfer(0x0);
-				}
-			#else
-				stat == true ? SPI.transfer(RA8875_CMDREAD) : SPI.transfer(RA8875_DATAREAD);
-				uint8_t x = SPI.transfer(0x0);
-			#endif
+			stat == true ? SPI.transfer(RA8875_CMDREAD) : SPI.transfer(RA8875_DATAREAD);
+			uint8_t x = SPI.transfer(0x0);
 		#endif
 	#endif
 	_endSend();
@@ -5850,22 +5760,12 @@ void RA8875::writeCommand(const uint8_t d)
 		SPI.transfer(_cs, RA8875_CMDWRITE, SPI_CONTINUE); 
 		SPI.transfer(_cs, d, SPI_LAST);
 	#else
-		#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK)
+		#if (defined(__AVR__) && defined(_FASTSSPORT)) || defined(SPARK) || defined(___TEENSYES)
 			_spiwrite(RA8875_CMDWRITE);
 			_spiwrite(d);
 		#else
-			#if defined(SPI_HAS_TRANSACTION) && defined(__MKL26Z64__)	
-				if (_altSPI){
-					SPI1.transfer(RA8875_CMDWRITE);
-					SPI1.transfer(d);
-				} else {
-					SPI.transfer(RA8875_CMDWRITE);
-					SPI.transfer(d);
-				}
-			#else
-				SPI.transfer(RA8875_CMDWRITE);
-				SPI.transfer(d);
-			#endif
+			SPI.transfer(RA8875_CMDWRITE);
+			SPI.transfer(d);
 		#endif
 	#endif
 	_endSend();
