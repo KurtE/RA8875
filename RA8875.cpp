@@ -359,7 +359,7 @@ void RA8875::begin(const enum RA8875sizes s,uint8_t colors)
 					#ifdef SPIN2_OBJECT_CREATED			
 					if (SPIN2.pinIsMOSI(_mosi) && SPIN2.pinIsMISO(_miso) && SPIN2.pinIsSCK(_sclk)) {
 						_pspin = &SPIN2;
-						Serial.println("ILI9341_t3n: SPIN1 automatically selected");
+						Serial.println("ILI9341_t3n: SPIN2 automatically selected");
 					} else {
 					#endif
 				#endif
